@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
+using System.IO;
 using JPEG.Processor;
 
 namespace JPEG;
@@ -17,7 +18,8 @@ internal class Program
 			// var imageName = "Big_Black_River_Railroad_Bridge.bmp";
 			var compressedImagePath = imagePath + ".compressed." + JpegProcessor.CompressionQuality;
 			var uncompressedImagePath = imagePath + ".uncompressed." + JpegProcessor.CompressionQuality + ".bmp";
-
+			Console.WriteLine($"Compressed image saved to: {Path.GetFullPath(compressedImagePath)}");
+			Console.WriteLine($"Uncompressed image saved to: {Path.GetFullPath(uncompressedImagePath)}");
 			sw.Restart();
 			processor.Compress(imagePath, compressedImagePath);
 			sw.Stop();

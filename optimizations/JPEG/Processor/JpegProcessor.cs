@@ -76,14 +76,23 @@ public class JpegProcessor : IJpegProcessor
 					var _y = new double[DCTSize, DCTSize];
 					var cb = new double[DCTSize, DCTSize];
 					var cr = new double[DCTSize, DCTSize];
-					foreach (var channel in new[] { _y, cb, cr })
+					var channels = new[] { _y, cb, cr };
+					for (int i = 0; i < channels.Length; i++)
 					{
+						var channel = channels[i];  // Получаем ссылку на текущий канал
 						var quantizedBytes = new byte[DCTSize * DCTSize];
 						allQuantizedBytes.ReadAsync(quantizedBytes, 0, quantizedBytes.Length).Wait();
 						var quantizedFreqs = ZigZagUnScan(quantizedBytes);
 						var channelFreqs = DeQuantize(quantizedFreqs, image.Quality);
-						DCT.IDCT2D(channelFreqs, channel);
+
+						// Обновляем channel с результатом IDCT2D
+						channel = DCT.IDCT2D(channelFreqs);  
+
+						// Применяем сдвиг значений
 						ShiftMatrixValues(channel, 128);
+
+						// После выполнения операции, можно обновить массив channels
+						channels[i] = channel;
 					}
 
 					SetPixels(result, _y, cb, cr, PixelFormat.YCbCr, y, x);
@@ -112,18 +121,28 @@ public class JpegProcessor : IJpegProcessor
 
 		for (var y = 0; y < height; y++)
 		for (var x = 0; x < width; x++)
-			matrix.Pixels[yOffset + y, xOffset + x] = new Pixel(a[y, x], b[y, x], c[y, x], format);
+		{
+			int index = (yOffset + y) * matrix.Width + (xOffset + x); // Перевод 2D координат в 1D индекс
+			matrix.Pixels[index] = new Pixel(a[y, x], b[y, x], c[y, x], format == PixelFormat.YCbCr);
+		}
 	}
+
 
 	private static double[,] GetSubMatrix(Matrix matrix, int yOffset, int yLength, int xOffset, int xLength,
 		Func<Pixel, double> componentSelector)
 	{
 		var result = new double[yLength, xLength];
+
 		for (var j = 0; j < yLength; j++)
 		for (var i = 0; i < xLength; i++)
-			result[j, i] = componentSelector(matrix.Pixels[yOffset + j, xOffset + i]);
+		{
+			int index = (yOffset + j) * matrix.Width + (xOffset + i); // Перевод 2D координат в 1D индекс
+			result[j, i] = componentSelector(matrix.Pixels[index]);
+		}
+
 		return result;
 	}
+
 
 	private static IEnumerable<byte> ZigZagScan(byte[,] channelFreqs)
 	{
