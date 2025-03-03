@@ -1,4 +1,6 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Buffers;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -41,39 +43,59 @@ public record struct BitsWithLength
 
 class BitsBuffer
 {
-	private List<byte> buffer = new List<byte>();
+	private byte[] buffer;
+	private int bufferIndex;
 	private BitsWithLength unfinishedBits = new BitsWithLength();
+
+	public BitsBuffer(int capacity = 1024)
+	{
+		buffer = ArrayPool<byte>.Shared.Rent(capacity);
+	}
 
 	public void Add(BitsWithLength bitsWithLength)
 	{
-		var bitsCount = bitsWithLength.BitsCount;
-		var bits = bitsWithLength.Bits;
+		int bitsCount = bitsWithLength.BitsCount;
+		int bits = bitsWithLength.Bits;
 
-		int neededBits = 8 - unfinishedBits.BitsCount;
-		while (bitsCount >= neededBits)
+		while (bitsCount > 0)
 		{
-			bitsCount -= neededBits;
-			buffer.Add((byte)((unfinishedBits.Bits << neededBits) + (bits >> bitsCount)));
+			int neededBits = 8 - unfinishedBits.BitsCount;
+			if (bitsCount >= neededBits)
+			{
+				if (bufferIndex >= buffer.Length)
+					ExpandBuffer();
 
-			bits = bits & ((1 << bitsCount) - 1);
-
-			unfinishedBits.Bits = 0;
-			unfinishedBits.BitsCount = 0;
-
-			neededBits = 8;
+				buffer[bufferIndex++] = (byte)((unfinishedBits.Bits << neededBits) | (bits >> (bitsCount - neededBits)));
+				bitsCount -= neededBits;
+				bits &= (1 << bitsCount) - 1;
+				unfinishedBits.Bits = 0;
+				unfinishedBits.BitsCount = 0;
+			}
+			else
+			{
+				unfinishedBits.Bits = (unfinishedBits.Bits << bitsCount) | bits;
+				unfinishedBits.BitsCount += bitsCount;
+				bitsCount = 0;
+			}
 		}
+	}
 
-		unfinishedBits.BitsCount += bitsCount;
-		unfinishedBits.Bits = (unfinishedBits.Bits << bitsCount) + bits;
+	private void ExpandBuffer()
+	{
+		byte[] newBuffer = ArrayPool<byte>.Shared.Rent(buffer.Length * 2);
+		Array.Copy(buffer, newBuffer, buffer.Length);
+		ArrayPool<byte>.Shared.Return(buffer);
+		buffer = newBuffer;
 	}
 
 	public byte[] ToArray(out long bitsCount)
 	{
-		bitsCount = buffer.Count * 8L + unfinishedBits.BitsCount;
-		var result = new byte[bitsCount / 8 + (bitsCount % 8 > 0 ? 1 : 0)];
-		buffer.CopyTo(result);
+		bitsCount = bufferIndex * 8L + unfinishedBits.BitsCount;
+		var result = new byte[(bitsCount + 7) / 8];
+		Array.Copy(buffer, result, bufferIndex);
 		if (unfinishedBits.BitsCount > 0)
-			result[buffer.Count] = (byte)(unfinishedBits.Bits << (8 - unfinishedBits.BitsCount));
+			result[bufferIndex] = (byte)(unfinishedBits.Bits << (8 - unfinishedBits.BitsCount));
+		ArrayPool<byte>.Shared.Return(buffer);
 		return result;
 	}
 }
@@ -159,19 +181,24 @@ class HuffmanCodec
 
 	private static HuffmanNode BuildHuffmanTree(int[] frequences)
 	{
-		var nodes = GetNodes(frequences);
+		var nodes = new List<HuffmanNode>();
+
+		for (int i = 0; i < 256; i++)
+			if (frequences[i] > 0)
+				nodes.Add(new HuffmanNode { Frequency = frequences[i], LeafLabel = (byte)i });
 
 		while (nodes.Count > 1)
 		{
-			var firstMin = nodes.Dequeue();
-			var secondMin = nodes.Dequeue();
-			var frequency = firstMin.Frequency + secondMin.Frequency;
-			nodes.Enqueue(
-				new HuffmanNode { Frequency = frequency, Left = secondMin, Right = firstMin },
-				frequency);
+			nodes.Sort((a, b) => a.Frequency.CompareTo(b.Frequency));
+
+			var firstMin = nodes[0];
+			var secondMin = nodes[1];
+			nodes.RemoveRange(0, 2);
+
+			nodes.Add(new HuffmanNode { Frequency = firstMin.Frequency + secondMin.Frequency, Left = secondMin, Right = firstMin });
 		}
 
-		return nodes.Dequeue();
+		return nodes[0];
 	}
 
 	private static PriorityQueue<HuffmanNode, int> GetNodes(int[] frequences)
@@ -187,8 +214,9 @@ class HuffmanCodec
 
 	private static int[] CalcFrequences(IEnumerable<byte> data)
 	{
-		var result = new int[byte.MaxValue + 1];
-		Parallel.ForEach(data, b => Interlocked.Increment(ref result[b]));
+		var result = new int[256];
+		foreach (var b in data)
+			result[b]++;
 		return result;
 	}
 }
