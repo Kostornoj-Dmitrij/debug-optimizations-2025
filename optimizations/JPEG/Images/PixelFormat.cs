@@ -2,11 +2,11 @@
 
 public class PixelFormat
 {
-	private readonly string Format;
+	private readonly string _format;
 
 	private PixelFormat(string format)
 	{
-		Format = format;
+		_format = format;
 	}
 
 	public static PixelFormat RGB = new(nameof(RGB));
@@ -14,19 +14,19 @@ public class PixelFormat
 
 	protected bool Equals(PixelFormat other)
 	{
-		return string.Equals(Format, other.Format);
+		return string.Equals(_format, other._format);
 	}
 
 	public override bool Equals(object obj)
 	{
 		if (obj is PixelFormat other)
-			return Format == other.Format;
+			return _format == other._format;
 		return false;
 	}
 
 	public override int GetHashCode()
 	{
-		return Format?.GetHashCode() ?? 0;
+		return _format?.GetHashCode() ?? 0;
 	}
 
 	public static bool operator ==(PixelFormat a, PixelFormat b)
@@ -42,6 +42,6 @@ public class PixelFormat
 
 	public override string ToString()
 	{
-		return Format;
+		return _format;
 	}
 }

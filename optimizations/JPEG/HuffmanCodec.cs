@@ -2,9 +2,6 @@
 using System.Buffers;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
-using JPEG.Utilities;
 
 namespace JPEG;
 
@@ -20,36 +17,17 @@ public record struct BitsWithLength
 {
 	public int Bits { get; set; }
 	public int BitsCount { get; set; }
-
-	/*public class Comparer : IEqualityComparer<BitsWithLength>
-	{
-		public bool Equals(BitsWithLength x, BitsWithLength y)
-		{
-			if (x == y) return true;
-			if (x == null || y == null)
-				return false;
-			return x.BitsCount == y.BitsCount && x.Bits == y.Bits;
-		}
-
-		public int GetHashCode(BitsWithLength obj)
-		{
-			if (obj == null)
-				return 0;
-			return ((397 * obj.Bits) << 5) ^ (17 * obj.BitsCount);
-		}
-	}
-	*/
 }
 
 class BitsBuffer
 {
-	private byte[] buffer;
-	private int bufferIndex;
-	private BitsWithLength unfinishedBits = new BitsWithLength();
+	private byte[] _buffer;
+	private int _bufferIndex;
+	private BitsWithLength _unfinishedBits;
 
 	public BitsBuffer(int capacity = 1024)
 	{
-		buffer = ArrayPool<byte>.Shared.Rent(capacity);
+		_buffer = ArrayPool<byte>.Shared.Rent(capacity);
 	}
 
 	public void Add(BitsWithLength bitsWithLength)
@@ -59,22 +37,22 @@ class BitsBuffer
 
 		while (bitsCount > 0)
 		{
-			int neededBits = 8 - unfinishedBits.BitsCount;
+			int neededBits = 8 - _unfinishedBits.BitsCount;
 			if (bitsCount >= neededBits)
 			{
-				if (bufferIndex >= buffer.Length)
+				if (_bufferIndex >= _buffer.Length)
 					ExpandBuffer();
 
-				buffer[bufferIndex++] = (byte)((unfinishedBits.Bits << neededBits) | (bits >> (bitsCount - neededBits)));
+				_buffer[_bufferIndex++] = (byte)((_unfinishedBits.Bits << neededBits) | (bits >> (bitsCount - neededBits)));
 				bitsCount -= neededBits;
 				bits &= (1 << bitsCount) - 1;
-				unfinishedBits.Bits = 0;
-				unfinishedBits.BitsCount = 0;
+				_unfinishedBits.Bits = 0;
+				_unfinishedBits.BitsCount = 0;
 			}
 			else
 			{
-				unfinishedBits.Bits = (unfinishedBits.Bits << bitsCount) | bits;
-				unfinishedBits.BitsCount += bitsCount;
+				_unfinishedBits.Bits = (_unfinishedBits.Bits << bitsCount) | bits;
+				_unfinishedBits.BitsCount += bitsCount;
 				bitsCount = 0;
 			}
 		}
@@ -82,20 +60,20 @@ class BitsBuffer
 
 	private void ExpandBuffer()
 	{
-		byte[] newBuffer = ArrayPool<byte>.Shared.Rent(buffer.Length * 2);
-		Array.Copy(buffer, newBuffer, buffer.Length);
-		ArrayPool<byte>.Shared.Return(buffer);
-		buffer = newBuffer;
+		byte[] newBuffer = ArrayPool<byte>.Shared.Rent(_buffer.Length * 2);
+		Array.Copy(_buffer, newBuffer, _buffer.Length);
+		ArrayPool<byte>.Shared.Return(_buffer);
+		_buffer = newBuffer;
 	}
 
 	public byte[] ToArray(out long bitsCount)
 	{
-		bitsCount = bufferIndex * 8L + unfinishedBits.BitsCount;
+		bitsCount = _bufferIndex * 8L + _unfinishedBits.BitsCount;
 		var result = new byte[(bitsCount + 7) / 8];
-		Array.Copy(buffer, result, bufferIndex);
-		if (unfinishedBits.BitsCount > 0)
-			result[bufferIndex] = (byte)(unfinishedBits.Bits << (8 - unfinishedBits.BitsCount));
-		ArrayPool<byte>.Shared.Return(buffer);
+		Array.Copy(_buffer, result, _bufferIndex);
+		if (_unfinishedBits.BitsCount > 0)
+			result[_bufferIndex] = (byte)(_unfinishedBits.Bits << (8 - _unfinishedBits.BitsCount));
+		ArrayPool<byte>.Shared.Return(_buffer);
 		return result;
 	}
 }
@@ -105,7 +83,8 @@ class HuffmanCodec
 	public static byte[] Encode(IEnumerable<byte> data, out Dictionary<BitsWithLength, byte> decodeTable,
 		out long bitsCount)
 	{
-		var frequences = CalcFrequences(data);
+		var enumerable = data as byte[] ?? data.ToArray();
+		var frequences = CalcFrequences(enumerable);
 
 		var root = BuildHuffmanTree(frequences);
 
@@ -113,7 +92,7 @@ class HuffmanCodec
 		FillEncodeTable(root, encodeTable);
 
 		var bitsBuffer = new BitsBuffer();
-		foreach (var b in data)
+		foreach (var b in enumerable)
 			bitsBuffer.Add(encodeTable[b]);
 
 		decodeTable = CreateDecodeTable(encodeTable);
@@ -199,17 +178,6 @@ class HuffmanCodec
 		}
 
 		return nodes[0];
-	}
-
-	private static PriorityQueue<HuffmanNode, int> GetNodes(int[] frequences)
-	{
-		var nodes = new PriorityQueue<HuffmanNode, int>();
-
-		for (var i = 0; i < 256; i++)
-			if (frequences[i] > 0)
-				nodes.Enqueue(new HuffmanNode{Frequency = frequences[i], LeafLabel = (byte)i}, frequences[i]);
-
-		return nodes;
 	}
 
 	private static int[] CalcFrequences(IEnumerable<byte> data)

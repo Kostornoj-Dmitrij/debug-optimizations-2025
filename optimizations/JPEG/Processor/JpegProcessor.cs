@@ -14,7 +14,6 @@ public class JpegProcessor : IJpegProcessor
 	public static readonly JpegProcessor Init = new();
 	public const int CompressionQuality = 70;
 	private const int DctSize = 8;
-	private static object _lock = new();
 	private static DCT _dct = new(DctSize);
 
 	public void Compress(string imagePath, string compressedImagePath)
@@ -22,7 +21,6 @@ public class JpegProcessor : IJpegProcessor
 		using var fileStream = File.OpenRead(imagePath);
 		using var bmp = (Bitmap)Image.FromStream(fileStream, false, false);
 		var imageMatrix = (Matrix)bmp;
-		//Console.WriteLine($"{bmp.Width}x{bmp.Height} - {fileStream.Length / (1024.0 * 1024):F2} MB");
 		var compressionResult = Compress(imageMatrix, CompressionQuality);
 		compressionResult.Save(compressedImagePath);
 	}
@@ -90,12 +88,12 @@ public class JpegProcessor : IJpegProcessor
 
 		Parallel.ForEach(blocks, block =>
 		{
-			var _y = new double[DctSize, DctSize];
+			var y = new double[DctSize, DctSize];
 			var cb = new double[DctSize, DctSize];
 			var cr = new double[DctSize, DctSize];
 
 			var i = 0;
-			foreach(var channel in new[] { _y, cb, cr })
+			foreach(var channel in new[] { y, cb, cr })
 			{
 				var channelBytes = block.bytes.AsSpan(i * 64, 64);
 				var quantizedFreqs = ZigZagUnScan(channelBytes);
@@ -104,7 +102,7 @@ public class JpegProcessor : IJpegProcessor
 				ShiftMatrixValues(channel, 128);
 				i++;
 			}
-			SetPixels(result, _y, cb, cr, PixelFormat.YCbCr, block.y, block.x);
+			SetPixels(result, y, cb, cr, PixelFormat.YCbCr, block.y, block.x);
 		});
 
 
@@ -222,7 +220,7 @@ public class JpegProcessor : IJpegProcessor
 			{
 				result[y, x] =
 					((sbyte)quantizedBytes[y, x]) *
-					quantizationMatrix[y, x]; //NOTE cast to sbyte not to loose negative numbers
+					quantizationMatrix[y, x];
 			}
 		}
 
