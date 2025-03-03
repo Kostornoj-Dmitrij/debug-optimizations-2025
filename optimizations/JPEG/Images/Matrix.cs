@@ -37,10 +37,11 @@ class Matrix
             for (var x = 0; x < width; x++)
             {
                 var offset = ptr + rowOffset + x * 3;
-                matrix.Pixels[y, x] = new Pixel(*(offset + 2), *(offset + 1), *offset, PixelFormat.RGB);
+                matrix.Pixels[y, x] = new Pixel(offset[2], offset[1], offset[0], PixelFormat.RGB);
             }
         }
 
+        bmp.UnlockBits(bmpData);
         return matrix;
     }
 
@@ -61,9 +62,9 @@ class Matrix
             {
                 var pixel = matrix.Pixels[y, x];
                 var offset = ptr + rowOffset + x * 3;
-                *(offset + 2) = ToByte(pixel.R);
-                *(offset + 1) = ToByte(pixel.G);
-                *offset = ToByte(pixel.B);
+                offset[2] = ToByte(pixel.R);
+                offset[1] = ToByte(pixel.G);
+                offset[0] = ToByte(pixel.B);
             }
         }
         bmp.UnlockBits(bmpData);
