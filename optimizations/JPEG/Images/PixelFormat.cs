@@ -9,8 +9,8 @@ public class PixelFormat
 		Format = format;
 	}
 
-	public static PixelFormat RGB => new PixelFormat(nameof(RGB));
-	public static PixelFormat YCbCr => new PixelFormat(nameof(YCbCr));
+	public static PixelFormat RGB = new(nameof(RGB));
+	public static PixelFormat YCbCr = new(nameof(YCbCr));
 
 	protected bool Equals(PixelFormat other)
 	{

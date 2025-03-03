@@ -1,11 +1,12 @@
 ﻿using System;
 using System.Drawing;
+using System.Drawing.Imaging;
 
 namespace JPEG.Images;
 
 class Matrix
 {
-    public readonly Pixel[] Pixels;
+    public readonly Pixel[,] Pixels;
     public readonly int Height;
     public readonly int Width;
 
@@ -13,71 +14,70 @@ class Matrix
     {
         Height = height;
         Width = width;
-        Pixels = new Pixel[height * width];  // Одномерный массив для ускорения работы с памятью
+
+        Pixels = new Pixel[height, width];
+        for (var i = 0; i < height; ++i)
+        for (var j = 0; j < width; ++j)
+            Pixels[i, j] = new Pixel(0, 0, 0, PixelFormat.RGB);
     }
 
-    public Pixel this[int y, int x]
+    public static unsafe explicit operator Matrix(Bitmap bmp)
     {
-        get => Pixels[y * Width + x];
-        set => Pixels[y * Width + x] = value;
-    }
-
-    public static explicit operator Matrix(Bitmap bmp)
-    {
-        int height = bmp.Height - bmp.Height % 8;
-        int width = bmp.Width - bmp.Width % 8;
+        var height = bmp.Height - bmp.Height % 8;
+        var width = bmp.Width - bmp.Width % 8;
         var matrix = new Matrix(height, width);
-        
-        var bmpData = bmp.LockBits(new Rectangle(0, 0, width, height), 
-            System.Drawing.Imaging.ImageLockMode.ReadOnly, 
+        var bmpData = bmp.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.ReadOnly,
             System.Drawing.Imaging.PixelFormat.Format24bppRgb);
-        
-        unsafe
-        {
-            byte* ptr = (byte*)bmpData.Scan0;
-            int stride = bmpData.Stride;
+        var ptr = (byte*)bmpData.Scan0;
+        var stride = bmpData.Stride;
 
-            for (int j = 0; j < height; j++)
+        for (var y = 0; y < height; y++)
+        {
+            var rowOffset = y * stride;
+            for (var x = 0; x < width; x++)
             {
-                for (int i = 0; i < width; i++)
-                {
-                    byte b = ptr[j * stride + i * 3];
-                    byte g = ptr[j * stride + i * 3 + 1];
-                    byte r = ptr[j * stride + i * 3 + 2];
-                    matrix[j, i] = new Pixel(r, g, b, false);
-                }
+                var offset = ptr + rowOffset + x * 3;
+                matrix.Pixels[y, x] = new Pixel(*(offset + 2), *(offset + 1), *offset, PixelFormat.RGB);
             }
         }
-        
-        bmp.UnlockBits(bmpData);
+
         return matrix;
     }
 
-    public static explicit operator Bitmap(Matrix matrix)
+    public static unsafe explicit operator Bitmap(Matrix matrix)
     {
-        var bmp = new Bitmap(matrix.Width, matrix.Height, System.Drawing.Imaging.PixelFormat.Format24bppRgb);
-        var bmpData = bmp.LockBits(new Rectangle(0, 0, matrix.Width, matrix.Height), 
-            System.Drawing.Imaging.ImageLockMode.WriteOnly, 
+        var width = matrix.Width;
+        var height = matrix.Height;
+        var bmp = new Bitmap(width, height);
+        var bmpData = bmp.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.WriteOnly,
             System.Drawing.Imaging.PixelFormat.Format24bppRgb);
+        var ptr = (byte*)bmpData.Scan0;
+        var stride = bmpData.Stride;
 
-        unsafe
+        for (var y = 0; y < height; y++)
         {
-            byte* ptr = (byte*)bmpData.Scan0;
-            int stride = bmpData.Stride;
-
-            for (int j = 0; j < matrix.Height; j++)
+            var rowOffset = y * stride;
+            for (var x = 0; x < width; x++)
             {
-                for (int i = 0; i < matrix.Width; i++)
-                {
-                    var pixel = matrix[j, i];
-                    ptr[j * stride + i * 3] = (byte)pixel.B;
-                    ptr[j * stride + i * 3 + 1] = (byte)pixel.G;
-                    ptr[j * stride + i * 3 + 2] = (byte)pixel.R;
-                }
+                var pixel = matrix.Pixels[y, x];
+                var offset = ptr + rowOffset + x * 3;
+                *(offset + 2) = ToByte(pixel.R);
+                *(offset + 1) = ToByte(pixel.G);
+                *offset = ToByte(pixel.B);
             }
         }
-
         bmp.UnlockBits(bmpData);
+
         return bmp;
+    }
+
+    private static byte ToByte(double d)
+    {
+        return d switch
+        {
+            > byte.MaxValue => byte.MaxValue,
+            < byte.MinValue => byte.MinValue,
+            _ => (byte)d
+        };
     }
 }
